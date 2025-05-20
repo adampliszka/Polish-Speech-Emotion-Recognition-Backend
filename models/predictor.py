@@ -42,3 +42,16 @@ class Predictor:
             return predictions.numpy()
         else:  # XGBoost
             return self.model.predict(data)
+            
+    def predict_with_probs(self, data):
+        if self.model_type == ModelType.HUBERT:
+            inputs = self.extract_features(data)
+            with torch.no_grad():
+                outputs = self.model(**inputs)
+                predictions = torch.argmax(outputs.logits, dim=-1)
+                probabilities = torch.softmax(outputs.logits, dim=-1)
+            return predictions.numpy(), probabilities.numpy()
+        else:  # XGBoost
+            predictions = self.model.predict(data)
+            probabilities = self.model.predict_proba(data)
+            return predictions, probabilities
