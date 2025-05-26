@@ -23,9 +23,9 @@ class ModelManager:
             self.predictor.load_model()
             self.current_model = model_type
 
-    def predict(self, features):
+    def predict(self, features, sample_rate=16000):
         with self.lock:
-            return self.predictor.predict_with_probs(features)
+            return self.predictor.predict_with_probs(features, sample_rate)
 
 model_manager = ModelManager()
 
@@ -64,32 +64,14 @@ def predict():
         if np.max(np.abs(audio_data)) > 1.0:
             audio_data = audio_data / np.max(np.abs(audio_data))
 
+        # For XGBoost, always assume 16kHz to avoid resampling issues
+        # The model was trained on 16kHz audio from nEMO dataset
         if model_manager.current_model == ModelType.XGBOOST:
-            waveform = torch.tensor(audio_data, dtype=torch.float32)  # Ensure tensor is float32
-            if waveform.ndim == 1:
-                waveform = waveform.unsqueeze(0)
-
-            # Dynamically adjust n_fft based on input size
-            input_size = waveform.size(1)
-            n_fft = min(400, input_size)
-
-            mfcc_transform = torchaudio.transforms.MFCC(
-                sample_rate=sr,
-                n_mfcc=40,
-                melkwargs={
-                    "n_fft": n_fft,
-                    "hop_length": 160,
-                    "win_length": n_fft,
-                    "n_mels": 40,
-                    "center": False
-                }
-            )
-            mfcc = mfcc_transform(waveform)
-            features = mfcc.mean(dim=2).squeeze().numpy().reshape(1, -1)
+            predictions, probabilities = model_manager.predict(audio_data, 16000)
         else:
-            features = audio_data.astype(np.float32).reshape(1, -1)
-
-        predictions, probabilities = model_manager.predict(features)
+            # For HuBERT, use the provided sample rate
+            predictions, probabilities = model_manager.predict(audio_data, sr)
+            
         emotions = ["anger", "fear", "happiness", "neutral", "sadness", "surprised"]
         return jsonify({
             "predicted_emotion": emotions[predictions[0]],
